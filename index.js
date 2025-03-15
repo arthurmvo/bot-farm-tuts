@@ -35,8 +35,8 @@ async function openBrowserOnStreams() {
   streamers.forEach((streamer) => {
     console.log(`Opening stream for ${streamer}...`);
 
-    const command =`xvfb-run --auto-servernum google-chrome-stable --new-window --disable-gpu --no-sandbox --mute-audio "https://www.twitch.tv/${streamer}?token=${token}"`
-
+    const command =`xvfb-run --auto-servernum chromium --new-window --disable-gpu --no-sandbox --mute-audio "https://www.twitch.tv/${streamer}?token=${token}"`
+    
     exec(command, (err) => {
       if (err) {
         console.error(`Failed to open ${streamer}:`, err);
