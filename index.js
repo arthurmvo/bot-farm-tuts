@@ -1,100 +1,62 @@
 require('dotenv/config');
-const axios = require('axios')
-
-fs = require('fs');
+const axios = require('axios');
+const fs = require('fs');
 const { exec } = require('child_process');
 
-const clientId = process.env.CLIENT_ID
+const OS = process.env.CURRENT_OS;
+const streamers = process.env.STREAMERS.split(',');
 
-// Client-secret encounter in your twitch.tv developer app
-const clientSecret = process.env.CLIENT_SECRET
+// Your Twitch client credentials
+const clientId = process.env.CLIENT_ID;
+const clientSecret = process.env.CLIENT_SECRET;
 
-// Open twitch.tv on your favorite browser, remember that your account must be logged in
-const browser = process.env.BROWSER
-
-// Current operation system that the script will run
-/**
- * Options:
- * windows
- * linux
- */
-const OS = process.env.CURRENT_OS
-
+// Function to get the OAuth access token
 async function getAccessToken() {
-  const response = await axios.post(`https://id.twitch.tv/oauth2/token?client_id=${clientId}&client_secret=${clientSecret}&grant_type=client_credentials`)
-
-  return response.data.access_token
-}
-
-async function checkIfStreamerIsLive(streamerChannel, accessToken) {
   try {
-    const response = await axios.get(`https://api.twitch.tv/helix/search/channels?query=${streamerChannel.toLowerCase()}`, {
-      headers: {
-        'client-id': clientId,
-        'Authorization': `Bearer ${accessToken}`
-      }
-    })
+    const response = await axios.post(`https://id.twitch.tv/oauth2/token`, null, {
+      params: {
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'client_credentials',
+      },
+    });
 
-    const streamerData = response.data.data.find((currentStreamer) => {
-      return currentStreamer.display_name.toLowerCase() === streamerChannel.toLowerCase()
-    })
-
-    return streamerData.is_live
-  } catch(err) {
-    console.log(err)
+    return response.data.access_token;  // The Bearer token
+  } catch (error) {
+    console.error('Error getting access token:', error);
+    process.exit(1);  // Exit if unable to get token
   }
 }
 
-async function openBrowserOnStreams() {
-  const streamers = process.env.STREAMERS.split(',');
+// Function to open Twitch streams in a browser
+function openBrowserOnStreams() {
+  streamers.forEach(async (streamer) => {
+    const statusFile = `${streamer}.txt`;
+    let previousStatus = fs.existsSync(statusFile) ? fs.readFileSync(statusFile, 'utf8') : '';
 
-  const openBrowserCommand = {
-    windows: `start ${browser}`,
-    linux: `run ${browser}`,
-  }
+    if (previousStatus !== 'opened') {
+      console.log(`Opening stream for ${streamer}...`);
 
-  const accessToken = await getAccessToken()
+      const token = await getAccessToken();  // Get Bearer token
 
-  streamers.map(async (streamer) => {
-    const isLive = await checkIfStreamerIsLive(streamer, accessToken)
+      // For now, we don't need to check if the streamer is live since you wanted to always keep streams open
+      const command = OS === 'linux'
+        ? `DISPLAY=:99 google-chrome-stable --new-window --disable-gpu --no-sandbox --mute-audio "https://www.twitch.tv/${streamer}?token=${token}"`
+        : `start chrome "https://www.twitch.tv/${streamer}?token=${token}"`; // Windows command
 
-    if (fs.existsSync(`${streamer}.txt`)) {
-      global_data = fs.readFileSync(`${streamer}.txt`).toString();
-    } else {
-      global_data = ''
-    }
-
-    const canOpenTheBrowser = isLive && global_data === 'notopened' || isLive && global_data === ''
-  
-    if (canOpenTheBrowser) {
-      exec(`${openBrowserCommand[OS]} www.twitch.tv/${streamer}` , function(err) {
-        if (err){ 
+      exec(command, (err) => {
+        if (err) {
+          console.error(`Failed to open ${streamer}:`, err);
         } else {
-          fs.writeFile(`${streamer}.txt`, 'opened', function (err) {
-            if (err) throw err;
-          })
+          fs.writeFileSync(statusFile, 'opened');
         }
-      })
+      });
     }
-  
-    if (!isLive) {
-      fs.writeFile(`${streamer}.txt`, 'notopened', function (err) {
-        if (err) throw err;
-      })
-    }
-  
-    fs.appendFile(`${streamer}Logs.txt`, `script run at: ${new Date()}\n`, function (err) {
-      if (err) throw err;
-    })
-
-    console.log(`${streamer}: ${new Date()}\n`)
-  })
+  });
 }
 
+// Run script at startup and repeat every 15 minutes
 (() => {
-  openBrowserOnStreams()
-
-  setInterval(() => {
-    openBrowserOnStreams()
-  }, 900000)
+  console.log('Starting Twitch Farming Bot...');
+  openBrowserOnStreams();
 })();
