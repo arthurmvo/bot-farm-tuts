@@ -2,13 +2,20 @@ require('dotenv/config');
 const puppeteer = require('puppeteer');
 
 const streamers = process.env.STREAMERS.split(',');
-const TWITCH_USERNAME = process.env.TWITCH_USERNAME;
-const TWITCH_PASSWORD = process.env.TWITCH_PASSWORD;
+const AUTH_TOKEN = process.env.AUTH_TOKEN;
 
 async function watchStream(browser, streamer) {
   try {
     console.log(`Opening stream for ${streamer}...`);
     const page = await browser.newPage();
+    
+    // Set auth token cookie before loading any Twitch page
+    await page.setCookie({
+      name: 'auth-token',
+      value: AUTH_TOKEN,
+      domain: '.twitch.tv',
+      path: '/',
+    });
     
     // Block video content but allow stream connection
     await page.setRequestInterception(true);
@@ -25,7 +32,7 @@ async function watchStream(browser, streamer) {
     });
 
     // Optimize page settings
-    await page.setViewport({ width: 400, height: 300 }); // Smaller viewport
+    await page.setViewport({ width: 400, height: 300 });
     
     // Emulate low-end device to minimize resource usage
     const client = await page.target().createCDPSession();
@@ -33,13 +40,13 @@ async function watchStream(browser, streamer) {
     await client.send('Network.emulateNetworkConditions', {
       offline: false,
       latency: 100,
-      downloadThroughput: 50 * 1024, // 50 kb/s
-      uploadThroughput: 20 * 1024 // 20 kb/s
+      downloadThroughput: 50 * 1024,
+      uploadThroughput: 20 * 1024
     });
 
-    // Navigate to the streamer's page
+    // Navigate directly to streamer's page
     await page.goto(`https://www.twitch.tv/${streamer}`, {
-      waitUntil: 'domcontentloaded', // Changed from networkidle0 to load faster
+      waitUntil: 'domcontentloaded',
       timeout: 60000,
     });
 
@@ -74,8 +81,8 @@ async function watchStream(browser, streamer) {
 async function main() {
   console.log('Starting Twitch Points Farming Bot...');
   
-  if (!TWITCH_USERNAME || !TWITCH_PASSWORD) {
-    console.error('Error: TWITCH_USERNAME and TWITCH_PASSWORD are required in .env file');
+  if (!AUTH_TOKEN) {
+    console.error('Error: AUTH_TOKEN is required in .env file');
     process.exit(1);
   }
   
@@ -99,20 +106,6 @@ async function main() {
         '--js-flags="--max-old-space-size=128"'
       ]
     });
-
-    // Login to Twitch first
-    const loginPage = await browser.newPage();
-    await loginPage.goto('https://www.twitch.tv/login', {
-      waitUntil: 'domcontentloaded'
-    });
-    await loginPage.waitForSelector('input[autocomplete="username"]');
-    await loginPage.type('input[autocomplete="username"]', TWITCH_USERNAME);
-    await loginPage.type('input[autocomplete="current-password"]', TWITCH_PASSWORD);
-    await loginPage.click('button[data-a-target="passport-login-button"]');
-    
-    // Wait for login to complete
-    await loginPage.waitForNavigation();
-    await loginPage.close();
 
     // Watch all streams
     await Promise.all(streamers.map(streamer => watchStream(browser, streamer)));
